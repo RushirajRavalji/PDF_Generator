@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart'
-    as pdfWidgets; // Using 'pdfWidgets' for clarity
+import 'package:pdf/widgets.dart' as pdfWidgets;
 import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
 import 'dart:io';
@@ -20,12 +20,13 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Simple Bill Maker',
       theme: ThemeData(primarySwatch: Colors.blue),
+      debugShowCheckedModeBanner: false,
       home: BillScreen(),
     );
   }
 }
 
-// Screen for entering bill information
+//? Screen for entering bill information
 class BillScreen extends StatefulWidget {
   const BillScreen({super.key});
 
@@ -34,7 +35,7 @@ class BillScreen extends StatefulWidget {
 }
 
 class _BillScreenState extends State<BillScreen> {
-  // Form key for validation
+  
   final _formKey = GlobalKey<FormState>();
 
   // Controllers for text fields
@@ -42,7 +43,7 @@ class _BillScreenState extends State<BillScreen> {
   TextEditingController itemDescriptionController = TextEditingController();
   TextEditingController itemPriceController = TextEditingController();
 
-  // List to store items
+
   List<Map<String, dynamic>> itemsList = [];
 
   // Selected date (default to current date)
