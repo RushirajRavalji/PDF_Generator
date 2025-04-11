@@ -1,342 +1,426 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pdfWidgets;
+import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
-import 'dart:io';
-import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:signature/signature.dart';
 
-void main() {
-  runApp(MyApp());
-}
+void main() => runApp(const MyApp());
 
-// Main app widget
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
+  const MyApp({Key? key}) : super(key: key);
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Simple Bill Maker',
+      title: 'Responsive Bill Maker',
       theme: ThemeData(primarySwatch: Colors.blue),
       debugShowCheckedModeBanner: false,
-      home: BillScreen(),
+      home: const BillScreen(),
     );
   }
 }
 
-//? Screen for entering bill information
 class BillScreen extends StatefulWidget {
-  const BillScreen({super.key});
-
+  const BillScreen({Key? key}) : super(key: key);
   @override
   State<BillScreen> createState() => _BillScreenState();
 }
 
 class _BillScreenState extends State<BillScreen> {
-  
   final _formKey = GlobalKey<FormState>();
-
-  // Controllers for text fields
-  TextEditingController customerNameController = TextEditingController();
-  TextEditingController itemDescriptionController = TextEditingController();
-  TextEditingController itemPriceController = TextEditingController();
-
-
-  List<Map<String, dynamic>> itemsList = [];
-
-  // Selected date (default to current date)
+  final TextEditingController companyNameController = TextEditingController();
+  final TextEditingController customerNameController = TextEditingController();
+  final TextEditingController itemDescriptionController =
+      TextEditingController();
+  final TextEditingController itemPriceController = TextEditingController();
+  final List<Map<String, dynamic>> items = [];
+  bool hasSignature = false;
   DateTime selectedDate = DateTime.now();
+  final SignatureController _signatureController = SignatureController(
+    penStrokeWidth: 2,
+    penColor: Colors.black,
+    exportBackgroundColor: Colors.white,
+  );
 
-  // Function to pick date
   Future<void> pickDate() async {
-    final pickedDate = await showDatePicker(
+    final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: selectedDate,
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
     );
-
-    if (pickedDate != null) {
-      setState(() {
-        selectedDate = pickedDate;
-      });
+    if (picked != null) {
+      setState(() => selectedDate = picked);
     }
   }
 
-  // Function to add item to list
   void addItem() {
-    if (itemDescriptionController.text.isNotEmpty &&
-        itemPriceController.text.isNotEmpty) {
-      setState(() {
-        itemsList.add({
-          'description': itemDescriptionController.text,
-          'price': double.parse(itemPriceController.text),
-        });
-        // Clear input fields
-        itemDescriptionController.clear();
-        itemPriceController.clear();
-      });
+    // Basic validation first, without using form validation
+    if (itemDescriptionController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter an item description')),
+      );
+      return;
     }
-  }
 
-  // Function to remove item from list
-  void removeItem(int index) {
+    if (itemPriceController.text.isEmpty ||
+        double.tryParse(itemPriceController.text) == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid price')),
+      );
+      return;
+    }
+
+    // If we reach here, inputs are valid
+    final double price = double.parse(itemPriceController.text);
+
+    // Use a separate setState call to update the UI
     setState(() {
-      itemsList.removeAt(index);
+      items.add({
+        'description': itemDescriptionController.text,
+        'price': price,
+      });
+
+      // Clear fields after adding
+      itemDescriptionController.clear();
+      itemPriceController.clear();
     });
   }
 
-  // Function to create PDF
+  Future<void> handleSignature() async {
+    await showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Add Signature'),
+            content: SizedBox(
+              height: 200,
+              child: Signature(
+                controller: _signatureController,
+                backgroundColor: Colors.grey[200]!,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  _signatureController.clear();
+                  Navigator.of(context).pop();
+                },
+                child: const Text('Clear'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  if (_signatureController.isNotEmpty) {
+                    setState(() => hasSignature = true);
+                  }
+                  Navigator.of(context).pop();
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  double get total =>
+      items.fold(0.0, (sum, item) => sum + (item['price'] as double));
+
+  void removeItem(int index) {
+    setState(() {
+      items.removeAt(index);
+    });
+  }
+
   Future<void> createPDF() async {
     if (!_formKey.currentState!.validate()) return;
-
-    // Create PDF document
-    final pdf = pdfWidgets.Document();
-
-    // Add a page to the PDF
+    final pdf = pw.Document();
     pdf.addPage(
-      pdfWidgets.Page(
+      pw.Page(
         pageFormat: PdfPageFormat.a4,
-        build: (context) {
-          return pdfWidgets.Column(
-            crossAxisAlignment: pdfWidgets.CrossAxisAlignment.start,
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              // Header section
-              pdfWidgets.Row(
-                mainAxisAlignment: pdfWidgets.MainAxisAlignment.spaceBetween,
+              pw.Text(
+                companyNameController.text,
+                style: pw.TextStyle(
+                  fontSize: 22,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.SizedBox(height: 10),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pdfWidgets.Text(
+                  pw.Text(
                     'Customer: ${customerNameController.text}',
-                    style: pdfWidgets.TextStyle(fontSize: 18),
+                    style: pw.TextStyle(fontSize: 18),
                   ),
-                  pdfWidgets.Text(
+                  pw.Text(
                     'Date: ${DateFormat('yyyy-MM-dd').format(selectedDate)}',
-                    style: pdfWidgets.TextStyle(fontSize: 18),
+                    style: pw.TextStyle(fontSize: 18),
                   ),
                 ],
               ),
-
-              pdfWidgets.SizedBox(height: 20),
-
-              // Title
-              pdfWidgets.Text(
+              pw.SizedBox(height: 20),
+              pw.Text(
                 'Invoice',
-                style: pdfWidgets.TextStyle(
+                style: pw.TextStyle(
                   fontSize: 24,
-                  fontWeight: pdfWidgets.FontWeight.bold,
+                  fontWeight: pw.FontWeight.bold,
                 ),
               ),
-
-              pdfWidgets.SizedBox(height: 20),
-
-              // Items table
-              pdfWidgets.Table(
-                border: pdfWidgets.TableBorder.all(),
+              pw.SizedBox(height: 20),
+              pw.Table(
+                border: pw.TableBorder.all(),
                 children: [
-                  // Table header
-                  pdfWidgets.TableRow(
-                    decoration: pdfWidgets.BoxDecoration(
-                      color: PdfColors.grey300,
-                    ),
+                  pw.TableRow(
+                    decoration: pw.BoxDecoration(color: PdfColors.grey300),
                     children: [
-                      pdfWidgets.Padding(
-                        padding: pdfWidgets.EdgeInsets.all(8),
-                        child: pdfWidgets.Text(
+                      pw.Padding(
+                        padding: pw.EdgeInsets.all(8),
+                        child: pw.Text(
                           'Item',
-                          style: pdfWidgets.TextStyle(
-                            fontWeight: pdfWidgets.FontWeight.bold,
-                          ),
+                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
                         ),
                       ),
-                      pdfWidgets.Padding(
-                        padding: pdfWidgets.EdgeInsets.all(8),
-                        child: pdfWidgets.Text(
+                      pw.Padding(
+                        padding: pw.EdgeInsets.all(8),
+                        child: pw.Text(
                           'Price',
-                          style: pdfWidgets.TextStyle(
-                            fontWeight: pdfWidgets.FontWeight.bold,
-                          ),
+                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
                         ),
                       ),
                     ],
                   ),
-
-                  // Table rows with items
-                  ...itemsList.map((item) {
-                    return pdfWidgets.TableRow(
+                  ...items.map(
+                    (item) => pw.TableRow(
                       children: [
-                        pdfWidgets.Padding(
-                          padding: pdfWidgets.EdgeInsets.all(8),
-                          child: pdfWidgets.Text(item['description']),
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(item['description']),
                         ),
-                        pdfWidgets.Padding(
-                          padding: pdfWidgets.EdgeInsets.all(8),
-                          child: pdfWidgets.Text(
-                            '${item['price'].toStringAsFixed(2)}',
+                        pw.Padding(
+                          padding: pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            (item['price'] as double).toStringAsFixed(2),
                           ),
                         ),
                       ],
-                    );
-                  }),
+                    ),
+                  ),
                 ],
               ),
-
-              pdfWidgets.SizedBox(height: 20),
-
-              // Total calculation
-              pdfWidgets.Align(
-                alignment: pdfWidgets.Alignment.centerRight,
-                child: pdfWidgets.Text(
-                  'Total: ${calculateTotal().toStringAsFixed(2)}',
-                  style: pdfWidgets.TextStyle(
+              pw.SizedBox(height: 20),
+              pw.Align(
+                alignment: pw.Alignment.centerRight,
+                child: pw.Text(
+                  'Total: \$${total.toStringAsFixed(2)}',
+                  style: pw.TextStyle(
                     fontSize: 20,
-                    fontWeight: pdfWidgets.FontWeight.bold,
+                    fontWeight: pw.FontWeight.bold,
                   ),
                 ),
+              ),
+              pw.SizedBox(height: 50),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.end,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.center,
+                    children: [
+                      hasSignature
+                          ? pw.Container(
+                            width: 150,
+                            height: 50,
+                            decoration: pw.BoxDecoration(
+                              border: pw.Border(bottom: pw.BorderSide()),
+                            ),
+                            child: pw.Center(child: pw.Text('Signature')),
+                          )
+                          : pw.Container(width: 150, height: 0),
+                      pw.SizedBox(height: 5),
+                      pw.Text('Authorized Signature'),
+                    ],
+                  ),
+                ],
               ),
             ],
           );
         },
       ),
     );
-
-    // Save PDF file
-    final output = await getTemporaryDirectory();
-    final file = File('${output.path}/invoice.pdf');
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/invoice.pdf');
     await file.writeAsBytes(await pdf.save());
-
-    // Open the PDF file
-    OpenFile.open(file.path);
-  }
-
-  // Calculate total amount
-  double calculateTotal() {
-    double total = 0;
-    for (var item in itemsList) {
-      total += item['price'];
-    }
-    return total;
+    await OpenFile.open(file.path);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Create Bill')),
-      body: Padding(
-        padding: EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              // Customer name input
-              TextFormField(
-                controller: customerNameController,
-                decoration: InputDecoration(
-                  labelText: 'Customer Name',
-                  border: OutlineInputBorder(),
-                ),
-                validator:
-                    (value) => value!.isEmpty ? 'Please enter a name' : null,
-              ),
-
-              SizedBox(height: 20),
-
-              // Date picker
-              Row(
-                children: [
-                  Text(
-                    'Date: ${DateFormat('yyyy-MM-dd').format(selectedDate)}',
-                  ),
-                  SizedBox(width: 20),
-                  ElevatedButton(
-                    onPressed: pickDate,
-                    child: Text('Choose Date'),
-                  ),
-                ],
-              ),
-
-              SizedBox(height: 30),
-
-              // Add items section
-              Text('Add Items:', style: TextStyle(fontSize: 18)),
-              SizedBox(height: 10),
-
-              Row(
-                children: [
-                  // Item description input
-                  Expanded(
-                    child: TextFormField(
-                      controller: itemDescriptionController,
-                      decoration: InputDecoration(
-                        labelText: 'Item Description',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-
-                  SizedBox(width: 10),
-
-                  // Item price input
-                  Expanded(
-                    child: TextFormField(
-                      controller: itemPriceController,
-                      decoration: InputDecoration(
-                        labelText: 'Price',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-
-                  SizedBox(width: 10),
-
-                  // Add button
-                  IconButton(
-                    onPressed: addItem,
-                    icon: Icon(Icons.add_box, size: 35),
-                    color: Colors.blue,
-                  ),
-                ],
-              ),
-
-              SizedBox(height: 20),
-
-              // List of items
-              Expanded(
-                child:
-                    itemsList.isEmpty
-                        ? Center(child: Text('No items added yet'))
-                        : ListView.builder(
-                          itemCount: itemsList.length,
-                          itemBuilder: (context, index) {
-                            return ListTile(
-                              title: Text(itemsList[index]['description']),
-                              subtitle: Text(
-                                '${itemsList[index]['price'].toStringAsFixed(2)}',
-                              ),
-                              trailing: IconButton(
-                                icon: Icon(Icons.delete, color: Colors.red),
-                                onPressed: () => removeItem(index),
-                              ),
-                            );
-                          },
+      appBar: AppBar(title: const Text('Create Bill')),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder:
+              (context, constraints) => SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextFormField(
+                        controller: companyNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Company Name',
+                          border: OutlineInputBorder(),
                         ),
-              ),
+                        validator:
+                            (value) =>
+                                value == null || value.isEmpty
+                                    ? 'Enter company name'
+                                    : null,
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: customerNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Customer Name',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator:
+                            (value) =>
+                                value == null || value.isEmpty
+                                    ? 'Enter customer name'
+                                    : null,
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Date: ${DateFormat('yyyy-MM-dd').format(selectedDate)}',
+                            ),
+                          ),
+                          ElevatedButton(
+                            onPressed: pickDate,
+                            child: const Text('Choose Date'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Signature: ${hasSignature ? 'Added' : 'Not Added'}',
+                            ),
+                          ),
+                          ElevatedButton(
+                            onPressed: handleSignature,
+                            child: const Text('Add Signature'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 30),
+                      const Text('Add Items:', style: TextStyle(fontSize: 18)),
+                      const SizedBox(height: 10),
 
-              // Generate PDF button
-              ElevatedButton.icon(
-                onPressed: createPDF,
-                icon: Icon(Icons.picture_as_pdf),
-                label: Text('Create PDF Bill'),
-                style: ElevatedButton.styleFrom(
-                  padding: EdgeInsets.symmetric(vertical: 15, horizontal: 30),
+                      // Item entry row - separate from the main form
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: TextField(
+                              controller: itemDescriptionController,
+                              decoration: const InputDecoration(
+                                labelText: 'Description',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 1,
+                            child: TextField(
+                              controller: itemPriceController,
+                              decoration: const InputDecoration(
+                                labelText: 'Price',
+                                border: OutlineInputBorder(),
+                              ),
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          ElevatedButton(
+                            onPressed: addItem,
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.all(16),
+                              minimumSize: const Size(48, 48),
+                            ),
+                            child: const Icon(Icons.add),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 20),
+                      if (items.isEmpty)
+                        const Center(child: Text('No items added yet'))
+                      else
+                        Card(
+                          elevation: 2,
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: items.length,
+                            separatorBuilder:
+                                (context, index) => const Divider(height: 1),
+                            itemBuilder:
+                                (context, index) => ListTile(
+                                  title: Text(items[index]['description']),
+                                  subtitle: Text(
+                                    '\$${(items[index]['price'] as double).toStringAsFixed(2)}',
+                                  ),
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.delete),
+                                    color: Colors.red,
+                                    onPressed: () => removeItem(index),
+                                  ),
+                                ),
+                          ),
+                        ),
+
+                      const SizedBox(height: 30),
+                      ElevatedButton.icon(
+                        onPressed: createPDF,
+                        icon: const Icon(Icons.picture_as_pdf),
+                        label: const Text('Create PDF Bill'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ],
-          ),
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    companyNameController.dispose();
+    customerNameController.dispose();
+    itemDescriptionController.dispose();
+    itemPriceController.dispose();
+    _signatureController.dispose();
+    super.dispose();
   }
 }
