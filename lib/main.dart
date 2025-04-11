@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
@@ -37,6 +38,7 @@ class _BillScreenState extends State<BillScreen> {
   final TextEditingController itemPriceController = TextEditingController();
   final List<Map<String, dynamic>> items = [];
   bool hasSignature = false;
+  Uint8List? signatureImage;
   DateTime selectedDate = DateTime.now();
   final SignatureController _signatureController = SignatureController(
     penStrokeWidth: 2,
@@ -57,7 +59,6 @@ class _BillScreenState extends State<BillScreen> {
   }
 
   void addItem() {
-    // Basic validation first, without using form validation
     if (itemDescriptionController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter an item description')),
@@ -73,17 +74,14 @@ class _BillScreenState extends State<BillScreen> {
       return;
     }
 
-    // If we reach here, inputs are valid
     final double price = double.parse(itemPriceController.text);
 
-    // Use a separate setState call to update the UI
     setState(() {
       items.add({
         'description': itemDescriptionController.text,
         'price': price,
       });
 
-      // Clear fields after adding
       itemDescriptionController.clear();
       itemPriceController.clear();
     });
@@ -113,7 +111,12 @@ class _BillScreenState extends State<BillScreen> {
               TextButton(
                 onPressed: () async {
                   if (_signatureController.isNotEmpty) {
-                    setState(() => hasSignature = true);
+                    final exportedImage =
+                        await _signatureController.toPngBytes();
+                    setState(() {
+                      signatureImage = exportedImage;
+                      hasSignature = true;
+                    });
                   }
                   Navigator.of(context).pop();
                 },
@@ -135,6 +138,7 @@ class _BillScreenState extends State<BillScreen> {
 
   Future<void> createPDF() async {
     if (!_formKey.currentState!.validate()) return;
+
     final pdf = pw.Document();
     pdf.addPage(
       pw.Page(
@@ -144,7 +148,7 @@ class _BillScreenState extends State<BillScreen> {
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Text(
-                companyNameController.text,
+                'Company Name: ${companyNameController.text}',
                 style: pw.TextStyle(
                   fontSize: 22,
                   fontWeight: pw.FontWeight.bold,
@@ -189,7 +193,7 @@ class _BillScreenState extends State<BillScreen> {
                       pw.Padding(
                         padding: pw.EdgeInsets.all(8),
                         child: pw.Text(
-                          'Price',
+                          'Price ',
                           style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
                         ),
                       ),
@@ -205,7 +209,7 @@ class _BillScreenState extends State<BillScreen> {
                         pw.Padding(
                           padding: pw.EdgeInsets.all(8),
                           child: pw.Text(
-                            (item['price'] as double).toStringAsFixed(2),
+                            '${(item['price'] as double).toStringAsFixed(2)}',
                           ),
                         ),
                       ],
@@ -217,7 +221,7 @@ class _BillScreenState extends State<BillScreen> {
               pw.Align(
                 alignment: pw.Alignment.centerRight,
                 child: pw.Text(
-                  'Total: \$${total.toStringAsFixed(2)}',
+                  'Total: ${total.toStringAsFixed(2)}',
                   style: pw.TextStyle(
                     fontSize: 20,
                     fontWeight: pw.FontWeight.bold,
@@ -231,16 +235,19 @@ class _BillScreenState extends State<BillScreen> {
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.center,
                     children: [
-                      hasSignature
+                      hasSignature && signatureImage != null
                           ? pw.Container(
+                            width: 150,
+                            height: 70,
+                            child: pw.Image(pw.MemoryImage(signatureImage!)),
+                          )
+                          : pw.Container(
                             width: 150,
                             height: 50,
                             decoration: pw.BoxDecoration(
                               border: pw.Border(bottom: pw.BorderSide()),
                             ),
-                            child: pw.Center(child: pw.Text('Signature')),
-                          )
-                          : pw.Container(width: 150, height: 0),
+                          ),
                       pw.SizedBox(height: 5),
                       pw.Text('Authorized Signature'),
                     ],
@@ -252,6 +259,7 @@ class _BillScreenState extends State<BillScreen> {
         },
       ),
     );
+
     final dir = await getTemporaryDirectory();
     final file = File('${dir.path}/invoice.pdf');
     await file.writeAsBytes(await pdf.save());
@@ -328,8 +336,6 @@ class _BillScreenState extends State<BillScreen> {
                       const SizedBox(height: 30),
                       const Text('Add Items:', style: TextStyle(fontSize: 18)),
                       const SizedBox(height: 10),
-
-                      // Item entry row - separate from the main form
                       Row(
                         children: [
                           Expanded(
@@ -348,7 +354,7 @@ class _BillScreenState extends State<BillScreen> {
                             child: TextField(
                               controller: itemPriceController,
                               decoration: const InputDecoration(
-                                labelText: 'Price',
+                                labelText: 'Price ',
                                 border: OutlineInputBorder(),
                               ),
                               keyboardType:
@@ -368,7 +374,6 @@ class _BillScreenState extends State<BillScreen> {
                           ),
                         ],
                       ),
-
                       const SizedBox(height: 20),
                       if (items.isEmpty)
                         const Center(child: Text('No items added yet'))
@@ -385,7 +390,7 @@ class _BillScreenState extends State<BillScreen> {
                                 (context, index) => ListTile(
                                   title: Text(items[index]['description']),
                                   subtitle: Text(
-                                    '\$${(items[index]['price'] as double).toStringAsFixed(2)}',
+                                    '₹${(items[index]['price'] as double).toStringAsFixed(2)}',
                                   ),
                                   trailing: IconButton(
                                     icon: const Icon(Icons.delete),
@@ -395,7 +400,6 @@ class _BillScreenState extends State<BillScreen> {
                                 ),
                           ),
                         ),
-
                       const SizedBox(height: 30),
                       ElevatedButton.icon(
                         onPressed: createPDF,
