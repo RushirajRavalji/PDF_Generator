@@ -148,7 +148,7 @@ class _BillScreenState extends State<BillScreen> {
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Text(
-                'Company Name: ${companyNameController.text}',
+                ' ${companyNameController.text}',
                 style: pw.TextStyle(
                   fontSize: 22,
                   fontWeight: pw.FontWeight.bold,
